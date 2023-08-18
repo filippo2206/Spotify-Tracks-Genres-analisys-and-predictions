@@ -1,0 +1,2023 @@
+---
+title: "Music Genres Classification"
+author: "Filippo Boldrini, Federico Sandrinelli, Gabriele Sanguin"
+font: 12pt
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+  html_document:
+    toc: true
+    number_sections: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+# Introduction
+
+Music genre classification is a task for various music platforms and it plays a crucial role in many domains, such as music recommendation systems and personalized user experiences. The objective of this report is to study this task from a statistical point of view using a dataset of music taken from Spotify. We will explore the features of our data and investigate different techniques to classify five major music genres.
+
+We will first provide an overview of our dataset, with the description and pre-processing of the data. Then we will proceed with exploratory data analysis and the building of the models to predict the genre class with different approaches. Finally we will evaluate the performance of our models and make a comparison between them. We will use evaluation metrics such as accuracy, precision, recall and F1 score.
+
+# Loading and Preprocessing Data
+
+## Loading Libraries
+
+We start with the loading of R packages required beside base R. They will be useful for the data analysis and data visualization.
+
+```{r, echo = TRUE}
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(readr)
+library(corrplot)
+library(plotly)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(nortest)
+library(tidyverse)
+library(gridExtra)
+library(tidymodels)
+library(leaps)
+library(glmnet)
+library(pROC)
+library(rsample)
+library(correlation)
+library(DataExplorer)
+library(knitr)
+library(outliers)
+library(class)
+library(grid)
+library(cowplot)
+library(car)
+library(ISLR2)
+library(MASS)
+library(e1071)
+```
+
+## Dataset Presentation
+
+The dataset we are using consists on data of Spotify tracks over a range of more than 100 different genres. Spotify uses an automated system to analyze the audio characteristics of the songs and each track of the dataset present these audio features with mostly numerical values.
+
+We downloaded the dataset from Kaggle: [Spotify Tracks Dataset](https://www.kaggle.com/datasets/maharshipandya/-spotify-tracks-dataset)
+
+Let's proceed on the loading:
+
+```{r, include = TRUE}
+spotify_data <- read.csv("./dataset_spotify.csv")
+str(spotify_data)
+```
+
+Our dataset is made of 114000 lines and 21 columns. Here follows a brief description of the features:
+
+-   **track_id**: The Spotify ID for the track.
+-   **artists**: The artists names who performed the track. If there is more than one artist, they are separated by a ';'.
+-   **album_name**: The album name in which the track appears.
+-   **track_name**: Name of the track.
+-   **popularity**: The popularity of a track is a value between 0 and 100, with 100 being the most popular. The popularity is calculated by algorithm and is based, in the most part, on the total number of plays the track has had and how recent those plays are. Generally speaking, songs that are being played a lot now will have a higher popularity than songs that were played a lot in the past. Duplicate tracks (e.g. the same track from a single and an album) are rated independently. Artist and album popularity is derived mathematically from track popularity.
+-   **duration_ms**: The track length in milliseconds.
+-   **explicit**: Whether or not the track has explicit lyrics (true = yes it does; false = no it does not OR unknown).
+-   **danceability**: Danceability describes how suitable a track is for dancing based on a combination of musical elements including tempo, rhythm stability, beat strength, and overall regularity. A value of 0.0 is least danceable and 1.0 is most danceable.
+-   **energy**: Energy is a measure from 0.0 to 1.0 and represents a perceptual measure of intensity and activity. Typically, energetic tracks feel fast, loud, and noisy. For example, death metal has high energy, while a Bach prelude scores low on the scale.
+-   **key**: The key the track is in. Integers map to pitches using standard Pitch Class notation. E.g. 0 = C, 1 = C♯/D♭, 2 = D, and so on. If no key was detected, the value is -1.
+-   **loudness**: The overall loudness of a track in decibels (dB).
+-   **mode**: Mode indicates the modality (major or minor) of a track, the type of scale from which its melodic content is derived. Major is represented by 1 and minor is 0.
+-   **speechiness**: Speechiness detects the presence of spoken words in a track. The more exclusively speech-like the recording (e.g. talk show, audio book, poetry), the closer to 1.0 the attribute value. Values above 0.66 describe tracks that are probably made entirely of spoken words. Values between 0.33 and 0.66 describe tracks that may contain both music and speech, either in sections or layered, including such cases as rap music. Values below 0.33 most likely represent music and other non-speech-like tracks.
+-   **acousticness**: A confidence measure from 0.0 to 1.0 of whether the track is acoustic. 1.0 represents high confidence the track is acoustic.
+-   **instrumentalness**: Predicts whether a track contains no vocals. "Ooh" and "aah" sounds are treated as instrumental in this context. Rap or spoken word tracks are clearly "vocal". The closer the instrumentalness value is to 1.0, the greater likelihood the track contains no vocal content.
+-   **liveness**: Detects the presence of an audience in the recording. Higher liveness values represent an increased probability that the track was performed live. A value above 0.8 provides strong likelihood that the track is live.
+-   **valence**: A measure from 0.0 to 1.0 describing the musical positiveness conveyed by a track. Tracks with high valence sound more positive (e.g. happy, cheerful, euphoric), while tracks with low valence sound more negative (e.g. sad, depressed, angry).
+-   **tempo**: The overall estimated tempo of a track in beats per minute (BPM). In musical terminology, tempo is the speed or pace of a given piece and derives directly from the average beat duration.
+-   **time_signature**: An estimated time signature. The time signature (meter) is a notational convention to specify how many beats are in each bar (or measure). The time signature ranges from 3 to 7 indicating time signatures of 3/4, to 7/4.
+-   **track_genre**: The genre in which the track belongs.
+
+## Dataset Preprocessing
+
+We decided to study a subset of the original dataset, in particular we are focusing on only a few track genres, that is `classical`, `hip-hop`, `rock-n-roll`, `reggaeton` and `techno`. We made this choice to make our analysis clearer and more understandable.
+
+```{r}
+spotify <- subset(spotify_data, track_genre %in% 
+                  c("classical", "hip-hop", "rock-n-roll",  
+                    "reggaeton", "techno"))
+```
+
+First we check if there are any missing values.
+
+```{r, include=TRUE}
+anyNA(spotify)
+```
+
+The first columns of the dataset contain general information about the audio tracks such as their IDs, names and the artists name. We are not gonna use them in future exploration and analysis of the data so we removed them by extracting a new subset of our dataset, keeping only the useful attributes.
+
+```{r, include=FALSE}
+spotify_num <- subset(spotify, select=c(popularity, duration_ms, explicit, danceability, energy, key, loudness, mode, speechiness, acousticness, instrumentalness, liveness, valence, tempo, time_signature,
+                                             track_genre))
+attach(spotify_num)
+```
+
+Let's print now the first lines of the dataset to see what it looks like.
+
+```{r, include=TRUE}
+head(spotify_num,5)
+```
+
+We notice that there are some attributes that are classified as numerical but that represents some categorical feature. for example the `key` column, whose numerical variables each points to a musical key. We want to transform these variables and all character variables into factors:
+
+```{r}
+#we transform the numerical and character variables into 
+#factors
+spotify_num$track_genre = as.factor(spotify_num$track_genre)
+spotify_num$explicit = as.factor(spotify_num$explicit)
+spotify_num$key = as.factor(spotify_num$key)
+spotify_num$mode = as.factor(spotify_num$mode)
+spotify_num$time_signature = as.factor(spotify_num$time_signature)
+```
+
+Finally, we check if the proportion of each genre is balanced in our dataframe. This is necessary to be sure there are not particular differences between track genres when we are going to train our models in predicting the track genre.
+
+```{r, include=TRUE}
+table(spotify_num$track_genre)
+prop.table(table(spotify_num$track_genre))
+```
+
+There are exactly 1000 sample for each music genre, hence the dataset is perfectly balanced.
+
+# Exploratory Data Analysis
+
+## Overview
+
+We are going now to explore the features in order to understand their main characteristics and uncover underlying patterns if present. Firstly we are going to see how the features behave in all music tracks, then we will focus on the relations of the features with the different track genres. In fact, later on `track_genres` will be used as target variable for our classification problem.
+
+Let's have a general look to all features.
+
+```{r, include=TRUE}
+summary(spotify_num)
+```
+
+As a first curiosity fact, we start by seeing which genre is more listened to by summing up the `popularity` of the different genres:
+
+```{r, echo=FALSE, include=TRUE}
+##grafico a torta con percentuali sulla popularity rispetto al genere
+sum_popularity <- aggregate(popularity ~ track_genre, data = spotify_num, FUN = sum)
+sum_popularity$percent <- sum_popularity$popularity / sum(sum_popularity$popularity)
+ggplot(sum_popularity, aes(x = "", y = popularity, fill = track_genre)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +
+  theme_void() +
+  labs(title = "Sum of the popularity variable for each track_genre variable") +
+  geom_text(aes(label = paste0(round(percent * 100), "%")), 
+            position = position_stack(vjust = 0.5), size = 7) +
+  guides(fill = guide_legend(title = "Track Genre")) +
+  theme(legend.position = "right",
+        legend.key.size = unit(1.5, "lines"),
+        legend.text = element_text(size = 15))
+```
+
+As we might expect, `classical` is the least popular genre whereas `techno` and `hip-hop` tracks are pretty popular respect to the other music genres.
+
+For a general overview of audio attributes in all tracks:
+
+```{r, echo=FALSE, include=TRUE}
+#box plot generally of the audio features
+audio_f <- gather(spotify_data,decriptive_vars, values, danceability, energy,
+                  speechiness, acousticness,  liveness,valence,
+                  factor_key=TRUE)
+var_distribution <- ggplot(audio_f, aes(x = decriptive_vars, y = values)) +
+  geom_boxplot() + 
+  coord_flip() +
+  labs(title = "Distribution across rest of the variables", x = "Audio features", y = "Values")
+var_distribution
+```
+
+We can make some observation from these boxplot. The `valence` seems to have a good gaussian shape in $[0,1]$ with center near $0.5$. `Liveness` and `speechiness` instead are highly skewed, with the majority of points near to the median. We can notice a large number of outliers in more than one features, taking into account the context we are studying this is no surprising as music does not follow strict rules.
+
+Let's compare now the density plot of each `track_genre` for some relevant features:
+
+```{r, echo=FALSE, include=TRUE}
+dance_density <- ggplot(spotify_num, aes(x=danceability, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Danceability", x="Danceability", y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+# Density plot per energy
+energy_density <- ggplot(spotify_num, aes(x=energy, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Energy", x="Energy" , y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+# Density plot per speechiness
+speech_density <- ggplot(spotify_num, aes(x=speechiness, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Speechiness", x="Speechiness",  y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+# Density plot per acousticness
+acoustic_density <- ggplot(spotify_num, aes(x=acousticness, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Acousticness", x="Acousticness",  y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+# Density plot per liveness
+live_density <- ggplot(spotify_num, aes(x=liveness, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Liveness", x="Liveness",  y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+# Density plot per valence
+valence_density <- ggplot(spotify_num, aes(x=valence, fill=track_genre)) +
+  geom_density(alpha=.5) +
+  labs(title="Valence", x="Valence",  y="Density") +
+  scale_fill_manual(values = rainbow(length(unique(spotify_num$track_genre))), name="Track_genre")
+
+grid.arrange(dance_density, energy_density, speech_density, acoustic_density, 
+             live_density, valence_density, ncol=2)
+
+```
+
+From the plots above we can make some useful observation. Note that different features distribute in different ways between genres, in particular `acousticness` emphasis the different instruments used in `classical` and `techno` music, while the `energy` and `valence` features present more 'colorful' distributions as they change between one genre to another. `speechnes` and `liveness` instead doesn't seem to have any important impact for the distinction of the `track_genre`.
+
+## Correlations
+
+We focus now on studying the correlations between numerical features. Correlations are statistical measures used to quantify the strength of the linear relationship between two variables, so how they are influenced by each other. We start to investigate them through the Pearson coefficient and the scatter plot.
+
+```{r, echo=FALSE}
+#matrice di scatterplot con indici di pearson 
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...) {
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r <- abs(cor(x, y))
+  txt <- format(c(r, 0.123456789), digits = digits)[1]
+  txt <- paste(prefix, txt, sep = "")
+  if(missing(cex.cor)) cex <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex = cex * r)
+}
+pairs(~danceability+energy+loudness+acousticness+speechiness+instrumentalness+valence+tempo, data = spotify_num, lower.panel = panel.cor)
+
+```
+
+In general there are very weak correlations between most variables with some exceptions. In particular `danceability`, `energy`, `loudness` and `acousticness` shows some significant relations between each others. At the same time features like `speechiness`, `tempo` and `valence` shows almost zero correlations.
+
+## Categorical features
+
+We proceed now to explore the categorical features and their relation with `track_genre`.
+
+We plot the distribution of `explicit`, `mode` and `time_signature` among all the genres.
+
+```{r,echo=FALSE}
+
+#### BARPLOT EXPLICIT
+
+df_explicit <- data.frame(explicit, track_genre)
+df_counts_explicit <- table(df_explicit$track_genre, df_explicit$explicit)
+plot_explicit <- ggplot() +
+  geom_col(data = as.data.frame(df_counts_explicit), aes(x = Var1, y = Freq, fill = Var2), position = "fill") +
+  labs(title = "Relationship between Explicit and Track Genre", x = "Track Genre", y = "Percentage") +
+  scale_fill_manual(values = c("gray", "red"), labels = c("False", "True"))+
+  guides(fill = guide_legend(title = "Explicit"))
+plot_explicit
+
+#### BARPLOT MODE
+df_mode <- data.frame(mode, track_genre)
+df_counts_mode <- table(df_mode$track_genre, df_mode$mode)
+plot_mode <- ggplot() +
+  geom_col(data = as.data.frame(df_counts_mode), aes(x = Var1, y = Freq, fill = Var2), position = "fill") +
+  labs(title = "Relationship between Mode and Track Genre", x = "Track Genre", y = "Percentage") +
+  scale_fill_manual(values = c("gray", "red"), labels = c("0", "1"))+
+  guides(fill = guide_legend(title = "Mode"))
+plot_mode
+
+#### BARPLOT TIME_SIGNATURE
+df_time_signature <- data.frame(time_signature, track_genre)
+df_counts_time_signature <- table(df_time_signature$track_genre, df_time_signature$time_signature)
+plot_time_signature <- ggplot() +
+  geom_col(data = as.data.frame(df_counts_time_signature), aes(x = Var1, y = Freq, fill = Var2), position = "fill") +
+  labs(title = "Relationship between Time_signature and Track Genre", x = "Track Genre", y = "Percentage") +
+  scale_fill_manual(values = c("gray", "red", "blue", "violet"), labels = c("1", "3", "4", "5"))+
+  guides(fill = guide_legend(title = "Time_signature"))
+plot_time_signature
+
+#grid.arrange(plot_explicit, plot_mode, plot_time_signature, ncol = 3)
+```
+
+For what concern the `explicit` feature it is possible to see that it occurs significantly in hip hop and reggaeton tracks, while it is almost absent in other genres. The `mode` variable is distribute quite uniformly with an higher presence of major tonalities in rock and roll and classical. `time_signature` shows a prevalence of 4/4 in all the genres besides in classical where there is a soft diversity.
+
+We now a take a look to the absolute frequencies of different keys.
+
+```{r,echo=FALSE}
+#### BARPLOT KEY 
+
+df_key <- data.frame(key, track_genre)
+df_counts_key <- table(df_key$key, df_key$track_genre)
+plot <- ggplot(as.data.frame(df_counts_key), aes(x = Var1, y = Freq, fill = Var2)) +
+  geom_col() +
+  labs(title = "Relationship between Key and Track Genre", x = "Key", y = "Frequency") +
+  scale_fill_manual(values = rainbow(5)) +
+  guides(fill = guide_legend(title = "Track Genre"))
+plot
+
+```
+
+The `key` 7 is the most popular but without a neat advantage. we notice there isn't any clear correlation between `key`and `track_genre`
+
+# Building models
+
+We now try different techniques used in classification problems to find which performs better with our data. The approaches we are going to try are *Logistic Regression* performed with variable selection through *backward stepwise selection*, *Ridge* and *Lasso Logistic Regression*, *Linear Discriminant Analysis*, *Quadratic Discriminant Analysis* and *Naive Bayes Classifier*.
+
+## Logistic Regression
+
+Since Logistic Regression is used to build binary classification models and we are facing a multiclass problem our idea consists in training a logistic model for each genres in our dataset to determine whether a track belongs to it or not. In a second moment we will compare the predictions made by each model to choose which one is more confident. This is basically what is done in the one-vs-all approach for classification in machine learning.
+
+### Splitting into train and test set
+
+First thing to do is to create some dummy variables for the `track_genre` so that we can consider them as separated features:
+
+```{r, echo=TRUE}
+dummies <- model.matrix(~ track_genre + 0)
+spotify_dummies <- data.frame(spotify_num, dummies)
+names(spotify_dummies)[names(spotify_dummies) == 
+                    "track_genreclassical" ] <- "classical"
+names(spotify_dummies)[names(spotify_dummies) == 
+                    "track_genrehip.hop" ] <- "hiphop"
+names(spotify_dummies)[names(spotify_dummies) == 
+                    "track_genrereggaeton" ] <- "reggaeton"
+names(spotify_dummies)[names(spotify_dummies) == 
+                    "track_genrerock.n.roll" ] <- "rock.n.roll"
+names(spotify_dummies)[names(spotify_dummies) == 
+                    "track_genretechno" ] <- "techno"
+```
+
+```{r, include=FALSE}
+attach(spotify_dummies)
+```
+
+We now have 5 more column in our dataset, each one represent a genre and tell us if a track is labeled with that genre ('1') or not ('0'). In this way it will be possible to train a model for each genre to discriminate whether a track belongs to it or not.
+
+We proceed with the split of the dataset into train and test set. A validation set is not necessary because no hyperparameter needs to be chosen in this section.
+
+```{r}
+#splitting in training e test set 
+set.seed(2222)
+
+split <- initial_split(spotify_dummies, prop = 0.80)
+train <- training(split)
+test <- testing(split)
+
+```
+
+What is the proportion now between genres in the two subsets?
+
+```{r}
+#proportion of the variable "track_genre" in 
+#training and test set 
+prop.table(table(train$track_genre))
+prop.table(table(test$track_genre))
+```
+
+### Training Logistic Regression Models (variable selection)
+
+We are ready to start the training. As anticipated we will deal with 5 different binary classification problems, that we want to solve with a logistic regression model. In this way, for each model we will find the probability of a track to belong to the correspondent genre.
+
+In order to find the best subset of predictors for each genre we use the *greedy algorithm* of *Backward Stepwise Selection*. We start every time by fitting the full model and then we proceed to remove the predictors with the highest *p*-value following a backward elimination approach. The final aim is to find that subset of variables in the dataset that can train a model with low AIC quantity: the *Akaike Information Criterion (AIC)* is an estimator of prediction error and of the relative quality of a statistical model for the chosen set of features. In particular it combines the model's complexity (number of parameters) and how well data fit (expressed as loglikelihood). $$AIC = 2*k - \log(L)$$
+
+```{r}
+###Classical
+glm.classical <- glm(classical~ popularity + duration_ms 
+                     + explicit + danceability 
+                     + energy + key + loudness + mode 
+                     + speechiness + acousticness 
+                     + instrumentalness + valence+ tempo 
+                     + liveness + time_signature,
+                     data = train, family = binomial)
+summary(glm.classical)
+
+#removing explicit
+glm.classical <- update(glm.classical, .~.-explicit)
+summary(glm.classical)
+
+#removing key
+glm.classical <- update(glm.classical, .~.-key)
+summary(glm.classical)
+
+#removing time_signature
+glm.classical <- update(glm.classical, .~.-time_signature)
+summary(glm.classical)
+
+#removing tempo
+glm.classical <- update(glm.classical, .~.-tempo)
+summary(glm.classical)
+
+#removing speechiness
+glm.classical <- update(glm.classical, .~.-speechiness)
+summary(glm.classical)
+
+#removing liveness
+best.glm.classical <- update(glm.classical, .~.-liveness)
+summary(best.glm.classical)
+```
+
+Here we just report the steps taken for the `classical` logistic regression model. We followed the same procedure also to find the best models for `hip-hop`, `reggaeton`, `rock-n-roll` and `techno`. Focusing on this process, it can be seen that at each step we removed the features with highest *p-value*. From model to model we haven't kept the same variables because they may act differently for different `track_genres`. For example in the first step on the feature selection for the `classical` model we removed the `explicit` feature, while for the `hip-hop` classification we kept it in the final model.
+
+We have continued until all variables left had a low *p-value*, and we can notice how the AIC index remained more or less the same with a slow decreasing. The best we got for the model of `classical` classification was $AIC = 729$. Nonetheless we keep the last model we found. It has a slightly higher AIC index (733) but less parameters.
+
+```{r, echo=FALSE, include=FALSE}
+###Hip-hop
+glm.hiphop <- glm(hiphop ~ popularity + duration_ms 
+                  + explicit + danceability + energy + key
+                  + loudness+mode + speechiness 
+                  + acousticness + instrumentalness 
+                  + valence + tempo + liveness 
+                  + time_signature, data = train, 
+                    family = binomial)
+summary(glm.hiphop)
+
+#removing key
+glm.hiphop <- update(glm.hiphop, .~.-key)
+summary(glm.hiphop)
+
+#removing time_signature
+glm.hiphop <- update(glm.hiphop, .~.-time_signature)
+summary(glm.hiphop)
+
+#removing duration_ms
+best.glm.hiphop <- update(glm.hiphop, .~.-duration_ms)
+summary(best.glm.hiphop)
+
+#####
+###Reggaeton
+glm.reggaeton <- glm(reggaeton ~ popularity + duration_ms
+                      + explicit + danceability + energy
+                      + key + loudness + mode + speechiness
+                      + acousticness + instrumentalness 
+                      + valence+tempo + liveness
+                      + time_signature, 
+                      data = train, 
+                      family = binomial)
+summary(glm.reggaeton)
+
+#removing energy
+glm.reggaeton <- update(glm.reggaeton, .~.-energy)
+summary(glm.reggaeton)
+
+#removing tempo
+glm.reggaeton <- update(glm.reggaeton, .~.-tempo)
+summary(glm.reggaeton)
+
+#removing key
+best.glm.reggaeton <- update(glm.reggaeton, .~.-key)
+summary(best.glm.reggaeton)
+
+#####
+###Techno
+glm.techno <- glm(techno ~ popularity
+                  + duration_ms + explicit + danceability
+                  + energy + key + loudness + mode 
+                  + speechiness + acousticness 
+                  + instrumentalness + valence + tempo 
+                  + liveness+time_signature,
+                  data = train, family = binomial)
+summary(glm.techno)
+
+#removing mode
+glm.techno <- update(glm.techno, .~.-mode)
+summary(glm.techno)
+
+
+#removing liveness
+glm.techno <- update(glm.techno, .~.-liveness)
+summary(glm.techno)
+
+#removings time_signature
+glm.techno <- update(glm.techno, .~.-time_signature)
+summary(glm.techno)
+
+#removing key
+best.glm.techno <- update(glm.techno, .~.-key)
+summary(best.glm.techno)
+
+#####
+###Rock and roll
+glm.rock_n.roll <- glm(rock.n.roll ~ popularity + duration_ms
+                       + explicit + danceability
+                       + energy + key + loudness + mode
+                       + speechiness + acousticness 
+                       + instrumentalness + valence
+                       + tempo + liveness + time_signature,
+                       data = train, family = binomial)
+summary(glm.rock_n.roll)
+
+##removing time_signature
+glm.rock_n.roll <- update(glm.rock_n.roll, .~.-time_signature)
+summary(glm.rock_n.roll)
+
+#removing tempo
+glm.rock_n.roll <- update(glm.rock_n.roll, .~.-tempo)
+summary(glm.rock_n.roll)
+
+#removing key
+best.glm.rock_n.roll <- update(glm.rock_n.roll, .~.-key)
+summary(best.glm.rock_n.roll)
+
+```
+
+### Diagnostic and Results
+
+We now try to understand if there are some problems in the models we found and how they perform on the test set.
+
+First we check for collinearity in the models by using the *VIF()* function:
+
+```{r}
+vif(best.glm.classical)
+vif(best.glm.techno)
+vif(best.glm.rock_n.roll)
+vif(best.glm.reggaeton)
+vif(best.glm.hiphop)
+```
+
+It is possible to see that none of the models present particular problems of collinearity between the predictors. Precisely, the *Variance Inflation Factor* computed on the predictors of each model never exceed the value 5. We only have a vif equals to 5.03 in the `loudness` variable of `techno` track genre.
+
+Let's try the best models, one by one, on the test set.
+
+```{r, echo=FALSE}
+###classical
+print("CLASSICAL")
+logistic_prob_classical <- predict(best.glm.classical, test, 
+                                   type = "response")
+logistic_pred_classical <- rep(0, 1000)
+logistic_pred_classical[logistic_prob_classical > 0.5] <-1
+classical_table <- table(logistic_pred_classical, 
+                         test$classical)
+#rearrange the confusion matrix to match the standar format
+classical_table <- classical_table[2:1, 2:1] 
+accuracy <- sum(diag(classical_table)) / sum(classical_table)
+tpr_for_classical <- classical_table[1,1]/
+  sum(classical_table[,1])
+fpr_for_classical <- classical_table[1,2]/
+  sum(classical_table[,2])
+print(classical_table) 
+print(paste("Accuracy:", accuracy))
+print(paste("TPR: ", round(tpr_for_classical,3)))
+print(paste("FPR: ", round(fpr_for_classical,3)))
+
+###techno
+print("TECHNO")
+logistic_prob_techno <- predict(best.glm.techno, test, 
+                                type = "response")
+logistic_pred_techno <- rep(0, 1000)
+logistic_pred_techno[logistic_prob_techno > 0.5] <-1
+techno_table <- table(logistic_pred_techno, test$techno)
+techno_table <- techno_table[2:1, 2:1] 
+accuracy <- sum(diag(techno_table)) / sum(techno_table)
+tpr_for_techno <- techno_table[1,1]/sum(techno_table[,1])
+fpr_for_techno <- techno_table[1,2]/sum(techno_table[,2])
+print(techno_table)
+print(paste("Accuracy:", accuracy))
+print(paste("TPR: ", round(tpr_for_techno,3)))
+print(paste("FPR: ", round(fpr_for_techno,3)))
+
+###hip-hop
+print("HIP-HOP")
+logistic_prob_hiphop <- predict(best.glm.hiphop, test, 
+                                type = "response")
+logistic_pred_hiphop <- rep(0, 1000)
+logistic_pred_hiphop[logistic_prob_hiphop > 0.5] <-1
+hiphop_table <- table(logistic_pred_hiphop, test$hiphop)
+hiphop_table <- hiphop_table[2:1, 2:1] 
+accuracy <- sum(diag(hiphop_table)) / sum(hiphop_table)
+tpr_for_hiphop <- hiphop_table[1,1]/sum(hiphop_table[,1])
+fpr_for_hiphop <- hiphop_table[1,2]/sum(hiphop_table[,2])
+print(hiphop_table)
+print(paste("Accuracy:", accuracy))
+print(paste("TPR: ", round(tpr_for_hiphop,3)))
+print(paste("FPR: ", round(fpr_for_hiphop,3)))
+
+###reggaeton
+print("REGGAETON")
+logistic_prob_reggaeton <- predict(best.glm.reggaeton, test, 
+                                   type = "response")
+logistic_pred_reggaeton <- rep(0, 1000)
+logistic_pred_reggaeton[logistic_prob_reggaeton > 0.5] <-1
+reggaeton_table <- table(logistic_pred_reggaeton, 
+                         test$reggaeton)
+reggaeton_table <- reggaeton_table[2:1, 2:1] 
+accuracy <- sum(diag(reggaeton_table)) / sum(reggaeton_table)
+tpr_for_reggaeton <- reggaeton_table[1,1]/
+  sum(reggaeton_table[,1])
+fpr_for_reggaeton <- reggaeton_table[1,2]/
+  sum(reggaeton_table[,2])
+print(reggaeton_table)
+print(paste("Accuracy:", accuracy))
+print(paste("TPR: ", round(tpr_for_reggaeton,3)))
+print(paste("FPR: ", round(fpr_for_reggaeton,3)))
+
+###rock and roll
+print("ROCK-N-ROLL")
+logistic_prob_rock.n.roll <- predict(best.glm.rock_n.roll, 
+                                     test, type = "response")
+logistic_pred_rock.n.roll <- rep(0, 1000)
+logistic_pred_rock.n.roll[logistic_prob_rock.n.roll > 0.5] <- 1
+rock.and.roll_table <- table(logistic_pred_rock.n.roll, 
+                             test$rock.n.roll)
+rock.and.roll_table <- rock.and.roll_table[2:1, 2:1]
+accuracy <- sum(diag(rock.and.roll_table)) / 
+  sum(rock.and.roll_table)
+tpr_for_rnr <- rock.and.roll_table[1,1]/
+  sum(rock.and.roll_table[,1])
+fpr_for_rnr <- rock.and.roll_table[1,2]/
+  sum(rock.and.roll_table[,2])
+print(rock.and.roll_table)
+print(paste("Accuracy:", accuracy))
+print(paste("TPR: ", round(tpr_for_rnr,3)))
+print(paste("FPR: ", round(fpr_for_rnr,3)))
+
+```
+
+For `classical`, `techno` and `rock-n-roll` the *accuracy* is above 90% and for `reggaeton` and `hip-hop` above 80%. At first this seems like a good result but in fact it is misleading. In fact, we train the classifiers to recognize one target genre at time, comparing it with all the others genres in the dataset. In this way, even if all the genres are equally represented in the training set, every time the target class (1) we are trying to identify is the minority class (approx 0.2 of the examples) while the "other" (0) class is the majority class (approx 0.8 of the examples).
+
+In this context hence the accuracy is not a reliable metric. The *True and False Positive rates* of the classifiers may be more explanatory. While the FPR is below 10% for all the classifiers the TPR does not behave very well. In fact, despite for `classical` music which is around 90%, it shows mediocre performances for `techno` and `rock-n-roll` (around 77%) and poor results for `reggaeton` and `hip-hop`, respectively around 56% and 35%.
+
+### ROC curves
+
+We introduce now the *Receiver Operating Characteristic (ROC)* curves used to visualize the performance of ours classification models. They are obtained by plotting the *False Positive Rate* against the *True Positive Rate* on the cartesian reference system. They will be also used on the last paragraph to compare the models and understand which is the best by seeing the area under the curve: greater the area, better the model's performance.
+
+```{r, echo=FALSE}
+####ROC curves for classifiers
+
+###classical
+roc.out.classical <- roc(test$classical, logistic_prob_classical, levels=c(0, 1))
+plot(roc.out.classical, print.auc=TRUE, legacy.axes=TRUE,
+     xlab="False positive rate", ylab="True positive rate")
+auc(roc.out.classical)
+###techno
+roc.out.techno <- roc(test$techno, logistic_prob_techno, levels=c(0, 1))
+plot(roc.out.techno, print.auc=TRUE, legacy.axes=TRUE,
+     xlab="False positive rate", ylab="True positive rate")
+auc(roc.out.techno)
+###rock and roll
+roc.out.rock.n.roll <- roc(test$rock.n.roll, logistic_prob_rock.n.roll, levels=c(0, 1))
+plot(roc.out.rock.n.roll, print.auc=TRUE, legacy.axes=TRUE,
+     xlab="False positive rate", ylab="True positive rate")
+auc(roc.out.rock.n.roll)
+###reggaeton
+roc.out.reggaeton <- roc(test$reggaeton, logistic_prob_reggaeton, levels=c(0, 1))
+plot(roc.out.reggaeton, print.auc=TRUE, legacy.axes=TRUE,
+     xlab="False positive rate", ylab="True positive rate")
+auc(roc.out.reggaeton)
+###hiphop
+roc.out.hiphop <- roc(test$hiphop, logistic_prob_hiphop, levels=c(0, 1))
+plot(roc.out.hiphop, print.auc=TRUE, legacy.axes=TRUE,
+     xlab="False positive rate", ylab="True positive rate")
+auc(roc.out.hiphop)
+```
+
+By comparing the area under the curves we can immediately see that the logistic model built to classify `classical` genre works really well, while the one for `hip-hop` has the worse performance. Let's see if we can improve it by adjusting the unbalance in the training set.
+
+### Dealing with unbalance of the training set
+
+In order to overcome the unbalancing in the data we decided to compare three approaches: *undersampling*, *oversampling* and a *mixed strategy*. As target music genre for the comparison we used `hip-hop`, whose classifier had the worst TPR.
+
+#### Undersampling
+
+We first perform undersampling by balancing the number of `hip-hop` tracks (class 1) with the number of tracks of other music genres (class 0), by taking a sample of the latter of the same length of class 1.
+
+```{r echo=TRUE}
+# Undersampling with a perfect balance between
+# hiphop class (1) and "other" class (0)
+other_class <- train[train$hiphop == 0, ]
+# size of the 1 class
+subsample_size <- nrow(train[train$hiphop == 1, ]) 
+set.seed(123) # set a seed for reproducibility
+other_class_subsample <- other_class[sample(nrow(other_class), 
+                                            subsample_size), ]
+undersample.balanced.data.hiphop <- rbind(other_class_subsample, 
+                                          train[train$hiphop == 1, ])
+
+best.glm.hiphop.undersampling <- glm(hiphop ~ popularity 
+                                          + explicit + danceability
+                                          + energy + +mode
+                                          + speechiness 
+                                          + acousticness 
+                                          + instrumentalness 
+                                          + valence
+                                          +tempo
+                                          +liveness,
+                                          data=undersample.balanced.data.hiphop, 
+                                          family = binomial)
+
+#Here we check if the performance on the test set improved
+logistic_prop_hiphop_under <- predict(
+  best.glm.hiphop.undersampling, test, type = "response")
+logistic_pred_hiphop_under <- rep(0, 1000)
+logistic_pred_hiphop_under[logistic_prop_hiphop_under > 0.5] <-1
+hiphop_table_under <- table(logistic_pred_hiphop_under, 
+                            test$hiphop)
+hiphop_table_under <- hiphop_table_under[2:1, 2:1] 
+tpr_for_hiphop_under <- hiphop_table_under[1,1]/
+  sum(hiphop_table_under[,1])
+fpr_for_hiphop_under <- hiphop_table_under[1,2]/
+  sum(hiphop_table_under[,2])
+print("HIP-HOP with undersampling")
+print(paste("TPR: ", round(tpr_for_hiphop_under,3)))
+print(paste("FPR: ", round(fpr_for_hiphop_under,3)))
+
+```
+
+The use of an undersampling approach to train a new model improves a lot the TPR for `hip-hop`: it goes from approx 0.35 to approx. 0.90, while affects a bit the fpr that increases from approx. 0.02 to approx 0.25. In this case in the training set we used around 2000 samples, 1000 for each class.
+
+#### Oversampling
+
+We now try oversampling by taking two times the set of the minority class, i.e. class 1, the `hip-hop` tracks.
+
+```{r}
+###Now we try the oversample of the minority class just by 
+#duplicating the elemnts belonging to the hiphop class.
+other_class <- train[train$hiphop == 0, ]
+balanced_data <- rbind(other_class, train[train$hiphop == 1, ], 
+                       train[train$hiphop == 1, ])
+
+best.glm.hiphop_with_oversampling <- glm(hiphop ~ popularity +
+                                         explicit + 
+                                         danceability +
+                                         energy + 
+                                         loudness + mode + 
+                                         speechiness + 
+                                         acousticness + 
+                                         instrumentalness +                                                                  valence + 
+                                         tempo + liveness, 
+                                         data=balanced_data, 
+                                         family = binomial)
+
+#Checking if perfromances improved
+logistic_prop_hiphop_over <- predict(best.glm.hiphop_with_oversampling, 
+                                     test, type = "response")
+logistic_pred_hiphop_over <- rep(0, 1000)
+logistic_pred_hiphop_over[logistic_prop_hiphop_over > 0.5] <- 1
+hiphop_table_over <- table(logistic_pred_hiphop_over, 
+                           test$hiphop)
+hiphop_table_over <- hiphop_table_over[2:1, 2:1] 
+tpr_for_hiphop_over <- hiphop_table_over[1,1]/
+  sum(hiphop_table_over[,1])
+fpr_for_hiphop_over <- hiphop_table_over[1,2]/
+  sum(hiphop_table_over[,2])
+print("HIP-HOP with oversampling")
+print(paste("TPR: ", round(tpr_for_hiphop_over,3)))
+print(paste("FPR: ", round(fpr_for_hiphop_over,3)))
+```
+
+Oversampling the minority class improved slightly the TPR, which became around 65%, but the improvement was not comparable with the undersampling. The proportion of elements of the two class is 2000 samples for class 1 and 4000 for class 0.
+
+#### Mixed approach
+
+We now perform an oversampling of the minority class and an undersampling of the majority class contemporanearly to have a balanced dataset between the 2 class.
+
+```{r}
+#Mixed approach: oversampling class 1 and undersampling class 0
+other_class <- train[train$hiphop == 0, ]
+subsample_size <- nrow(train[train$hiphop == 1, ]) 
+set.seed(123) 
+other_class_subsample <- other_class[sample(nrow(other_class), 
+                                            subsample_size*2), ]
+balanced_data <- rbind(other_class_subsample, 
+                       train[train$hiphop == 1, ], 
+                       train[train$hiphop == 1, ])
+
+best.glm.hiphop_with_mixedsampling <- glm(hiphop ~ popularity +
+                                         explicit + 
+                                         danceability +
+                                         energy + 
+                                         loudness + mode + 
+                                         speechiness + 
+                                         acousticness + 
+                                         instrumentalness +                                                                  valence + 
+                                         tempo + liveness, 
+                                         data=balanced_data, 
+                                         family = binomial)
+
+#Checking if perfromances improved
+logistic_prop_hiphop_mixed <- predict(
+  best.glm.hiphop_with_mixedsampling, test, type = "response")
+logistic_pred_hiphop_mixed <- rep(0, 1000)
+logistic_pred_hiphop_mixed[logistic_prop_hiphop_mixed  > 0.5] <- 1
+hiphop_table_mixed <- table(logistic_pred_hiphop_mixed, 
+                            test$hiphop)
+hiphop_table_mixed <- hiphop_table_mixed[2:1, 2:1] 
+tpr_for_hiphop_mixed <- hiphop_table_mixed[1,1]/
+  sum(hiphop_table_mixed[,1])
+fpr_for_hiphop_mixed <- hiphop_table_mixed[1,2]/
+  sum(hiphop_table_mixed[,2])
+print("HIP-HOP with mixed approach")
+print(paste("TPR: ", round(tpr_for_hiphop_mixed,3)))
+print(paste("FPR: ", round(fpr_for_hiphop_mixed,3)))
+```
+
+We can see that this mixed approach shows performance pretty similar to the undersampling, with a slightly higher TPR but also a slighty higher FPR. Here we had 4000 samples in total, 2000 for each class.
+
+#### Undersampling for other genres
+
+We now use the undersampling approach, being it the most straightforward, to build new models for each genres, despite for `classical` that already had an high TPR.
+
+```{r, echo=FALSE}
+#Undersampling for reggaeton
+other_class <- train[train$reggaeton == 0, ]
+subsample_size <- nrow(train[train$reggaeton == 1, ]) # size of the 1 class
+set.seed(123) # set a seed for reproducibility
+other_class_subsample <- other_class[sample(nrow(other_class), subsample_size), ]
+undersample.balanced.data.reggaeton <- rbind(other_class_subsample, train[train$reggaeton == 1, ])
+
+best.glm.reggaeton.undersampling <- glm(reggaeton ~ popularity+ duration_ms+ explicit+ danceability+ loudness+ mode+ speechiness+ acousticness+ instrumentalness+ valence+ liveness+ time_signature, data = undersample.balanced.data.reggaeton, family = binomial)
+#Checking if perfromances improved
+logistic_prop_reggaeton_under <- predict(best.glm.reggaeton.undersampling, test, type = "response")
+logistic_pred_reggaeton_under <- rep(0, 1000)
+logistic_pred_reggaeton_under[logistic_prop_reggaeton_under > 0.5] <-1
+reggaeton_table_under <- table(logistic_pred_reggaeton_under, test$reggaeton)
+reggaeton_table_under <- reggaeton_table_under[2:1, 2:1] #rearrange the confusion matrix to match the standar format
+tpr_for_reggaeton_under <- reggaeton_table_under[1,1]/sum(reggaeton_table_under[,1])
+fpr_for_reggaeton_under <- reggaeton_table_under[1,2]/sum(reggaeton_table_under[,2])
+print("REGGAETON with undersampling")
+print(paste("TPR: ", round(tpr_for_reggaeton_under,3)))
+print(paste("FPR: ", round(fpr_for_reggaeton_under,3)))
+
+
+#undersampling for rock and roll
+other_class <- train[train$rock.n.roll == 0, ]
+subsample_size <- nrow(train[train$rock.n.roll == 1, ]) # size of the 1 class
+set.seed(123) # set a seed for reproducibility
+other_class_subsample <- other_class[sample(nrow(other_class), subsample_size), ]
+undersample.balanced.data.rock <- rbind(other_class_subsample, train[train$rock.n.roll == 1, ])
+
+best.glm.rock.undersampling <- glm(rock.n.roll ~ popularity
+                                    + duration_ms
+                                    + explicit
+                                    + danceability
+                                    + energy
+                                    + loudness
+                                    + mode
+                                    + speechiness
+                                    + acousticness
+                                    + instrumentalness
+                                    + valence
+                                    + liveness,
+                                    data=undersample.balanced.data.rock, 
+                                    family = binomial)
+#Checking if perfromances improved
+logistic_prop_rnr_under <- predict(best.glm.rock.undersampling, test, type = "response")
+logistic_pred_rnr_under <- rep(0, 1000)
+logistic_pred_rnr_under[logistic_prop_rnr_under > 0.5] <-1
+rnr_table_under <- table(logistic_pred_rnr_under, test$rock.n.roll)
+rnrrnr_table_under <- rnr_table_under[2:1, 2:1] 
+tpr_for_rnr_under <- rnr_table_under[1,1]/sum(rnr_table_under[,1])
+fpr_for_rnr_under <- rnr_table_under[1,2]/sum(rnr_table_under[,2])
+print("ROCK N ROLL with undersampling")
+print(paste("TPR: ", round(tpr_for_rnr_under,3)))
+print(paste("FPR: ", round(fpr_for_rnr_under,3)))
+
+
+#####undersampling for techno
+other_class <- train[train$techno == 0, ]
+subsample_size <- nrow(train[train$techno == 1, ]) # size of the 1 class
+set.seed(123) # set a seed for reproducibility
+other_class_subsample <- other_class[sample(nrow(other_class), subsample_size), ]
+undersample.balanced.data.techno <- rbind(other_class_subsample, train[train$techno == 1, ])
+
+best.glm.techno.undersampling <- glm(techno ~ popularity
+                                          + duration_ms
+                                          + explicit
+                                          + danceability
+                                          + energy
+                                          + loudness
+                                          + speechiness
+                                          + acousticness
+                                          + instrumentalness
+                                          + valence
+                                          + tempo,
+                                          data=undersample.balanced.data.techno, 
+                                          family = binomial)
+#checking if perfromances improved
+logistic_prob_techno_under <- predict(best.glm.techno.undersampling, test, type = "response")
+logistic_pred_techno_under <- rep(0, 1000)
+logistic_pred_techno_under[logistic_prob_techno_under > 0.5] <-1
+techno_table_under <- table(logistic_pred_techno_under, test$techno)
+techno_table_under <- techno_table_under[2:1, 2:1] 
+tpr_for_techno_under <- techno_table_under[1,1]/sum(techno_table_under[,1])
+fpr_for_techno_under <- techno_table_under[1,2]/sum(techno_table_under[,2])
+print("TECHNO with undersampling")
+print(paste("TPR: ", round(tpr_for_techno_under,3)))
+print(paste("FPR: ", round(fpr_for_techno_under,3)))
+
+```
+
+As can be seen from the values of TPR and FPR the models have improved their performance on the test by undersampling the majority class.
+
+### Classification
+
+Now we want to get for each track in the test set a unique prediction for its genre. As mentioned before, to do that we compare the probabilities given by the classifiers and pick the larger one. In this way we classify the track on the basis of the classifier that has the strongest confidence for it.
+
+```{r}
+compare <- function(){
+  classical.prob <- predict(best.glm.classical, test, 
+                            type = "response")
+  techno.prob <- predict(best.glm.techno.undersampling, 
+                         test, type = "response")
+  rnr.prob <- predict(best.glm.rock.undersampling, test, 
+                      type = "response")
+  reggaeton.prob <- predict(best.glm.reggaeton.undersampling, 
+                            test, type = "response")
+  hiphop.prob <-predict(best.glm.hiphop.undersampling, 
+                        test, type = "response")
+  
+  # Create a matrix with the five vectors as 
+  #levels(spotify_dummies$track_genre)
+  #classical =  1
+  #hiphop =     2  
+  #reggaeton =  3
+  #rocknroll =  4
+  #techno =     5
+  prob.matrix <- cbind(classical.prob, hiphop.prob, 
+                       reggaeton.prob, rnr.prob, techno.prob)
+  genres <- levels(test$track_genre)
+  
+  track_genre.pred <- rep(0, length(test))
+  
+  # Loop over the indices of the vectors
+  for (i in 1:length(classical.prob)) {
+    # Find the maximum value at this index across all vectors
+    max_value <- max(prob.matrix[i, ])
+    
+    for (j in 1:ncol(prob.matrix)) {
+      if (prob.matrix[i, j] == max_value) {
+        track_genre.pred[i] <- genres[j]
+      } 
+    }
+  }
+  
+  return(track_genre.pred)
+}
+
+track_genre.pred <- compare()
+
+cm <- table(track_genre.pred, test$track_genre)
+print(cm)
+```
+
+### Results interpretation
+
+We proceed to analyze the performance of our one-vs-all approach to this classification problem.
+
+First let's compute the overall accuracy:
+
+```{r}
+cm.accuracy <- sum(diag(cm))/sum(cm)
+print(paste('Overall Accuracy =', cm.accuracy))
+```
+
+Then we compute precision, recall (TPR) and F1-score for each class:
+
+```{r}
+#Classical
+classical.precision <- cm[1,1]/sum(cm[1,])
+classical.recall <- cm[1,1]/sum(cm[,1])
+classical.f1 <- 2*((classical.precision * classical.recall)/
+                     (classical.precision + classical.recall))
+
+#Hip-hop
+hiphop.precision <- cm[2,2]/sum(cm[2,])
+hiphop.recall <- cm[2,2]/sum(cm[,2])
+hiphop.f1 <- 2*((hiphop.precision * hiphop.recall)/
+                  (hiphop.precision + hiphop.recall))
+
+#Reggaeton
+reggaeton.precision <- cm[3,3]/sum(cm[3,])
+reggaeton.recall <- cm[3,3]/sum(cm[,3])
+reggaeton.f1 <- 2*((reggaeton.precision * reggaeton.recall)/
+                     (reggaeton.precision + reggaeton.recall))
+
+#Rock and roll
+rnr.precision <- cm[4,4]/sum(cm[4,])
+rnr.recall <- cm[4,4]/sum(cm[,4])
+rnr.f1 <- 2*((rnr.precision * rnr.recall)/(rnr.precision + 
+                                             rnr.recall))
+
+#Techno
+techno.precision <- cm[5,5]/sum(cm[5,])
+techno.recall <- cm[5,5]/sum(cm[,5])
+techno.f1 <- 2*((techno.precision * techno.recall)/
+                  (techno.precision + techno.recall))
+
+metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(classical.precision, 
+                       hiphop.precision, reggaeton.precision, 
+                       rnr.precision, techno.precision), 2),
+  recall <- round(c(classical.recall, hiphop.recall, 
+                    reggaeton.recall, rnr.recall, techno.recall), 
+                  2),
+  f1 <- round(c(classical.f1, hiphop.f1, reggaeton.f1, rnr.f1, 
+                techno.f1), 2)
+)
+colnames(metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+
+#Here are the performance
+metrics
+```
+
+The *F1 score* provides and overview of the quality of the classification for each class. As we can see the highest scores are obtained for `classical`, `rock-n-roll` and `techno` while `reggaeton` and `hip-hop` obtain quite poor results. Looking at precision and recall allow to grasp more details on the behavior of our method which changes between different genres.
+
+Classic music has the highest score for *precision* meaning that almost every time the methods classify a track as `classical` it does the right choice. *Recall* is a bit lower (0.82) and this indicate that our method is missing some `classical` tracks. The consideration are pretty similar for `techno` music. For `Rock-n-Roll` instead the behavior is the opposite: *recall* is high (0.94) meaning that our method is classifying correctly most rock tracks but at the same time, being precision low, it can be seen that it is overestimating the presence of rock in the test set. In other words, it is classifying more tracks as rock than what is present in our data. `Hip-hop` and `reggaeton` shows very similar score in each metrics moreover, by looking at the confusion matrix, it is possible to see that between those genres there is the greatest misclassification. There are a consistent number of `hip-hop` track that are classified as `reggaeton` and viceversa.
+
+Let's try to understand better our results.
+
+```{r, echo=FALSE}
+classical.prob <- predict(best.glm.classical, test, type = "response")
+classical.pred.linear <- predict(best.glm.classical, test)
+
+rnr.prob <- predict(best.glm.rock.undersampling, test, type = "response")
+rnr.pred.linear <- predict(best.glm.rock.undersampling, test)
+
+techno.prob <- predict(best.glm.techno.undersampling, test, type = "response")
+techno.pred.linear <- predict(best.glm.techno.undersampling, test)
+
+hiphop.prob <-predict(best.glm.hiphop.undersampling, test, type = "response")
+hiphop.pred.linear <- predict(best.glm.hiphop.undersampling, test)
+
+reggaeton.prob <- predict(best.glm.reggaeton.undersampling, test, type = "response")
+reggaeton.pred.linear <- predict(best.glm.reggaeton.undersampling, test)
+
+classical.pred.dataframe = data.frame(classical.pred = classical.pred.linear, classical.prob = classical.prob, track_genre = test$track_genre)
+ggplot(data = classical.pred.dataframe, aes(x= classical.pred,   y= classical.prob))+
+  geom_point(aes(color=track_genre), alpha = 0.5, shape = 1, stroke = 1)+
+  xlab('classical.pred')+
+  ylab('classical.prob')+
+  ggtitle('Classical')
+
+rnr.pred.dataframe = data.frame(rnr.pred = rnr.pred.linear, rnr.prob = rnr.prob, track_genre = test$track_genre)
+ggplot(data = rnr.pred.dataframe, aes(x= rnr.pred, y= rnr.prob))+
+  geom_point(aes(color=track_genre), alpha = 0.5, shape = 1, stroke = 1)+
+  xlab('rnr.pred')+
+  ylab('rnr.prob')+
+  ggtitle('Rock n Roll')
+
+techno.pred.dataframe = data.frame(techno.pred = techno.pred.linear, techno.prob = techno.prob, track_genre = test$track_genre)
+ggplot(data = techno.pred.dataframe, aes(x= techno.pred, y =     techno.prob))+
+  geom_point(aes(color=track_genre), alpha = 0.5, shape = 1, stroke = 1)+
+  xlab('techno.pred')+
+  ylab('techno.prob')+
+  ggtitle('Techno')
+
+hiphop.pred.dataframe = data.frame(hiphop.pred = hiphop.pred.linear, hiphop.prob = hiphop.prob, track_genre = test$track_genre)
+ggplot(data = hiphop.pred.dataframe, aes(x= hiphop.pred, y= hiphop.prob))+
+geom_point(aes(color=track_genre), alpha = 0.5, shape = 1, stroke = 1)+
+xlab('hiphop.pred')+
+ylab('hiphop.prob')+
+ggtitle('Hip-hop')
+
+reggaeton.pred.dataframe = data.frame(reggaeton.pred = reggaeton.pred.linear, reggaeton.prob = reggaeton.prob, track_genre = test$track_genre)
+ggplot(data = reggaeton.pred.dataframe, aes(x= reggaeton.pred, y= reggaeton.prob))+
+geom_point(aes(color=track_genre), alpha = 0.5, shape = 1, stroke = 1)+
+xlab('reggaeton.pred')+
+ylab('reggaeton.prob')+
+ggtitle('Reggaeton')
+```
+
+We proceeded to plot the probabilities of the predictions given by each classifiers to try to understand the results we got from our method. The graphs show that the genres with the higher F1-scores have lot of points (predictions) associated with high probabilities and also a few points concentrated around the decision boundary. This is the case of `Classical` and `Techno` for example for which it can be seen that the classifiers assign the highest probabilities to points actually belonging to the correct classes. This could be interpreted as a strong confidence of the classifier, and thus of the ensemble method, when making predictions. For `hip-hop` and `reggaeton`, which have low values for the F1-score, the graphs are clearly different. It can be seen how there are fewer points associated with high probabilities and there is a great concentration of points on the middle of the curve. There is also a strong overlapping of points belonging to the two different classes in the top  of the curve. This can be seen somehow as a greater uncertainty of the classifiers with respect to the ones for `Classical`, `Techno` and `Rock-n-roll`. Thus, even if the classifiers by them self shows good results when they are compared with the others to decide which genre to pick among all it is more likely that there is a misclassification, especially between `hip-hop` and `reggaeton`.
+
+## Ridge and Lasso Logistic Regression
+
+We now want to compare whether *ridge* or *lasso* regularization could yield to better models than the ones we obtained through variables selection. To do so we will train a lasso and ridge regularized version of the logistic models we built previously. For each genres we will use the same training data we used for logistic regression, in the sense that, besides for `classical`, we will use the balanced data used in the undersampling approach. This is done to allow for a fair comparison of the logistic models.
+
+Lasso and Ridge are two different statistical regularization methods that allow us to compute an automatic selection of variables, operating shrinkage on the coefficients of the predictors in such a way that they assume values very close to zero (Ridge) or even zero (Lasso).
+
+### Ridge Regression
+
+First we try to use the ridge regularization.
+
+We use the `cv.glment` function from the `MASS` package to perform cross validation on the train set and choose the best value for the regularization parameter.
+
+Here we show the code for the `classical` model, the code is the same for other genres.
+
+```{r}
+
+#Classical
+
+#Preparing the data to be used with glmnet functions
+train.classical <- train[,1:17]
+test.classical <- test[,1:17]
+train.classical <- train.classical[,-16]
+test.classical <- test.classical[,-16]
+X.classical.train <- model.matrix(classical ~ ., data = 
+                                    train.classical)
+X.classical.test <- model.matrix(classical ~ ., data = 
+                                   test.classical)
+X.classical.train <- X.classical.train[,-1]
+X.classical.test <- X.classical.test[,-1]
+
+#performing cv
+classical.ridge.cv <- cv.glmnet(X.classical.train, 
+                                train$classical, 
+                                alpha = 0, 
+                                family = "binomial", 
+                                type.measure = "class")
+
+plot(classical.ridge.cv) #?
+best.lambda.ridge.classical <- classical.ridge.cv$lambda.min
+
+```
+
+```{r, echo=FALSE}
+classical.ridge = glmnet(X.classical.train,
+                         train$classical, 
+                         alpha = 0, 
+                         family = "binomial", 
+                         type.measure = "class")
+plot(classical.ridge, xvar="lambda", main="Shrinkage of coeffiecients given log lambda value")
+abline(v = log(classical.ridge.cv$lambda.min), col = "red",lty=2)
+```
+
+We can now use the value of lambda found by the cross-validation procedure to make prediction on the test set.
+
+```{r}
+#prediction 
+ridge.prediction.classical <- predict(classical.ridge.cv, 
+                                      X.classical.test,
+                                      s = best.lambda.ridge.classical,
+                                      type = "class")
+classical.ridge.table <- table(test$classical, 
+                               ridge.prediction.classical)
+classical.ridge.table <- classical.ridge.table[2:1, 2:1]
+classical.ridge.table
+```
+
+Recall the performance of the classical logistic classifier obtained with variable selection.
+
+```{r}
+classical_table
+```
+
+We can see that the results are pretty similar to our previous model, with a shift between the false positive and false negative.
+
+We now build the ridge version of the classifiers also for the other genres and compare them as we did previously. We don't show the code for the sake of readability.
+
+```{r, include=FALSE}
+#Techno
+
+#Preparing the data
+train.techno <- undersample.balanced.data.techno[,1:15] 
+train.techno$techno <- undersample.balanced.data.techno$techno
+test.techno <- test[,1:15] 
+test.techno$techno <- test$techno
+X.techno.train <- model.matrix(techno ~ ., data = train.techno)
+X.techno.test <- model.matrix(techno ~ ., data = test.techno)
+X.techno.train <- X.techno.train[,-1]
+X.techno.test <- X.techno.test[,-1]
+
+#performing cv
+techno.ridge.cv <- cv.glmnet(X.techno.train, undersample.balanced.data.techno$techno, 
+                             alpha = 0, family = "binomial", type.measure = "class")
+
+plot(techno.ridge.cv)
+best.lambda.ridge.techno <- techno.ridge.cv$lambda.min
+
+#prediction 
+ridge.prediction.techno <- predict(techno.ridge.cv, X.techno.test,
+                                   s = best.lambda.ridge.techno,
+                                   type = "class")
+table(test$techno, ridge.prediction.techno)
+
+#Hiphop
+
+#Preparing the data
+train.hiphop <- undersample.balanced.data.hiphop[,1:15] 
+train.hiphop$hiphop <- undersample.balanced.data.hiphop$hiphop
+test.hiphop <- test[,1:15] 
+test.hiphop$hiphop <- test$hiphop
+X.hiphop.train <- model.matrix(hiphop ~ ., data = train.hiphop)
+X.hiphop.test <- model.matrix(hiphop ~ ., data = test.hiphop)
+X.hiphop.train <- X.hiphop.train[,-1]
+X.hiphop.test <- X.hiphop.test[,-1]
+
+#performing cv
+hiphop.ridge.cv <- cv.glmnet(X.hiphop.train, undersample.balanced.data.hiphop$hiphop, 
+                             alpha = 0, family = "binomial", type.measure = "class")
+
+plot(hiphop.ridge.cv)
+best.lambda.ridge.hiphop <- hiphop.ridge.cv$lambda.min
+
+#prediction 
+ridge.prediction.hiphop <- predict(hiphop.ridge.cv, X.hiphop.test,
+                                   s = best.lambda.ridge.hiphop,
+                                   type = "class")
+table(test$hiphop, ridge.prediction.hiphop)
+
+#Reggaeton
+
+#Preparing the data
+train.reggaeton <- undersample.balanced.data.reggaeton[,1:15] 
+train.reggaeton$reggaeton <- undersample.balanced.data.reggaeton$reggaeton
+test.reggaeton <- test[,1:15] 
+test.reggaeton$reggaeton <- test$reggaeton
+X.reggaeton.train <- model.matrix(reggaeton ~ ., data = train.reggaeton)
+X.reggaeton.test <- model.matrix(reggaeton ~ ., data = test.reggaeton)
+X.reggaeton.train <- X.reggaeton.train[,-1]
+X.reggaeton.test <- X.reggaeton.test[,-1]
+
+#performing cv
+reggaeton.ridge.cv <- cv.glmnet(X.reggaeton.train, undersample.balanced.data.reggaeton$reggaeton, 
+                                alpha = 0, family = "binomial", type.measure = "class")
+
+plot(reggaeton.ridge.cv)
+best.lambda.ridge.reggaeton <- reggaeton.ridge.cv$lambda.min
+
+#prediction 
+ridge.prediction.reggaeton <- predict(reggaeton.ridge.cv, X.reggaeton.test,
+                                      s = best.lambda.ridge.reggaeton,
+                                      type = "class")
+table(test$reggaeton, ridge.prediction.reggaeton)
+
+#Rock
+
+#Preparing the data
+train.rock <- undersample.balanced.data.rock[,1:15] 
+train.rock$rock <- undersample.balanced.data.rock$rock.n.roll
+test.rock <- test[,1:15] 
+test.rock$rock <- test$rock.n.roll
+X.rock.train <- model.matrix(rock ~ ., data = train.rock)
+X.rock.test <- model.matrix(rock ~ ., data = test.rock)
+X.rock.train <- X.rock.train[,-1]
+X.rock.test <- X.rock.test[,-1]
+
+#performing cv
+rock.ridge.cv <- cv.glmnet(X.rock.train, undersample.balanced.data.rock$rock, 
+                           alpha = 0, family = "binomial", type.measure = "class")
+
+plot(rock.ridge.cv)
+best.lambda.ridge.rock <- rock.ridge.cv$lambda.min
+
+#prediction 
+ridge.prediction.rock <- predict(rock.ridge.cv, X.rock.test,
+                                 s = best.lambda.ridge.rock,
+                                 type = "class")
+table(test$rock.n.roll, ridge.prediction.rock)
+
+```
+
+```{r, include=FALSE}
+compareRidge <- function(){ 
+  
+  classical.prob <- predict(classical.ridge.cv, X.classical.test,
+                              s = best.lambda.ridge.classical,
+                              type = "response")
+  techno.prob <- predict(techno.ridge.cv, X.techno.test,
+                           s = best.lambda.ridge.techno,
+                           type = "response")
+  rnr.prob <- predict(rock.ridge.cv, X.rock.test,
+                        s = best.lambda.ridge.rock,
+                        type = "response")
+  reggaeton.prob <- predict(reggaeton.ridge.cv, X.reggaeton.test,
+                              s = best.lambda.ridge.reggaeton,
+                              type = "response")
+  hiphop.prob <-predict(hiphop.ridge.cv, X.hiphop.test,
+                          s = best.lambda.ridge.hiphop,
+                          type = "response")
+    
+  # Create a matrix with the five vectors as 
+  #levels(spotify_dummies$track_genre)
+  #classical =  1
+  #hiphop =     2  
+  #reggaeton =  3
+  #rocknroll =  4
+  #techno =     5
+  prob.matrix <- cbind(classical.prob, hiphop.prob, reggaeton.prob, rnr.prob, techno.prob)
+  genres <- levels(test$track_genre)
+  
+  track_genre.pred <- rep(0, length(test))
+  
+  # Loop over the indices of the vectors
+  for (i in 1:length(classical.prob)) {
+    # Find the maximum value at this index across all vectors
+    max_value <- max(prob.matrix[i, ])
+    
+    for (j in 1:ncol(prob.matrix)) {
+      if (prob.matrix[i, j] == max_value) {
+        track_genre.pred[i] <- genres[j]
+      } 
+    }
+  }
+  
+  return(track_genre.pred)
+}
+```
+
+Here we show the confusion matrix for the predictions of the models trained with ridge regularization. We will return on these results later.
+
+```{r, echo=FALSE}
+#Comparing the predictions
+
+track_genre.pred.ridge <- compareRidge()
+
+cm.ridge <- table(track_genre.pred.ridge, test$track_genre)
+
+cm.ridge
+
+```
+
+```{r, echo=FALSE}
+#Classical
+classical.precision <- cm.ridge[1,1]/sum(cm.ridge[1,])
+classical.recall <- cm.ridge[1,1]/sum(cm.ridge[,1])
+classical.f1 <- 2*((classical.precision * classical.recall)/(classical.precision + classical.recall))
+
+#Hip-hop
+hiphop.precision <- cm.ridge[2,2]/sum(cm.ridge[2,])
+hiphop.recall <- cm.ridge[2,2]/sum(cm.ridge[,2])
+hiphop.f1 <- 2*((hiphop.precision * hiphop.recall)/(hiphop.precision + hiphop.recall))
+
+#Reggaeton
+reggaeton.precision <- cm.ridge[3,3]/sum(cm.ridge[3,])
+reggaeton.recall <- cm.ridge[3,3]/sum(cm.ridge[,3])
+reggaeton.f1 <- 2*((reggaeton.precision * reggaeton.recall)/(reggaeton.precision + reggaeton.recall))
+
+#Rock and roll
+rnr.precision <- cm.ridge[4,4]/sum(cm.ridge[4,])
+rnr.recall <- cm.ridge[4,4]/sum(cm.ridge[,4])
+rnr.f1 <- 2*((rnr.precision * rnr.recall)/(rnr.precision + rnr.recall))
+
+#Techno
+techno.precision <- cm.ridge[5,5]/sum(cm.ridge[5,])
+techno.recall <- cm.ridge[5,5]/sum(cm.ridge[,5])
+techno.f1 <- 2*((techno.precision * techno.recall)/(techno.precision + techno.recall))
+
+ridge.metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(classical.precision, hiphop.precision, reggaeton.precision, rnr.precision, techno.precision), 2),
+  recall <- round(c(classical.recall, hiphop.recall, reggaeton.recall, rnr.recall, techno.recall), 2),
+  f1 <- round(c(classical.f1, hiphop.f1, reggaeton.f1, rnr.f1, techno.f1), 2)
+)
+colnames(ridge.metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+
+#Here are the performance
+
+cm.ridge.accuracy <- sum(diag(cm.ridge))/sum(cm.ridge)
+print(paste('Overall Accuracy =', cm.ridge.accuracy))
+
+ridge.metrics
+```
+
+### Lasso
+
+We now perform the same task using LASSO regression and cross-validation.
+
+```{r}
+#Data has already been pre-processed for ridge regression
+
+#Classical 
+
+#performing cv
+classical.lasso.cv <- cv.glmnet(X.classical.train, 
+                                train$classical, 
+                                alpha = 1, 
+                                family = "binomial", 
+                                type.measure = "class")
+
+plot(classical.lasso.cv)#?
+best.lambda.lasso.classical <- classical.lasso.cv$lambda.min
+
+```
+
+```{r, echo=FALSE}
+classical.lasso = glmnet(X.classical.train,
+                         train$classical, 
+                         alpha = 1, 
+                         family = "binomial", 
+                         type.measure = "class")
+plot(classical.lasso, xvar="lambda", main="Shrinkage of coeffiecients given log lambda value")
+abline(v = log(classical.ridge.cv$lambda.min), col = "red",lty=2)
+```
+
+As we did before we can use the best lambda selected with cross-validation to make predictions.
+
+```{r}
+
+#prediction 
+lasso.prediction.classical <- predict(classical.lasso.cv, 
+                                      X.classical.test,
+                                      s = best.lambda.lasso.classical,
+                                      type = "class")
+lasso.classical.table <- table(test$classical, 
+                               lasso.prediction.classical)
+lasso.classical.table <- lasso.classical.table[2:1, 2:1]
+lasso.classical.table
+```
+
+As before we do the same process for the other genres without showing the code.
+
+```{r, include=FALSE}
+#Techno
+
+#performing cv
+techno.lasso.cv <- cv.glmnet(X.techno.train, undersample.balanced.data.techno$techno, 
+                             alpha = 1, family = "binomial", type.measure = "class")
+
+plot(techno.lasso.cv)
+best.lambda.lasso.techno <- techno.lasso.cv$lambda.min
+
+#prediction 
+lasso.prediction.techno <- predict(techno.lasso.cv, X.techno.test,
+                                   s = best.lambda.lasso.techno,
+                                   type = "class")
+
+#Hiphop
+
+#performing cv
+hiphop.lasso.cv <- cv.glmnet(X.hiphop.train, undersample.balanced.data.hiphop$hiphop, 
+                             alpha = 1, family = "binomial", type.measure = "class")
+
+plot(hiphop.lasso.cv)
+best.lambda.lasso.hiphop <- hiphop.lasso.cv$lambda.min
+
+#prediction 
+lasso.prediction.hiphop <- predict(hiphop.lasso.cv, X.hiphop.test,
+                                   s = best.lambda.lasso.hiphop,
+                                   type = "class")
+
+#Reggaeton
+
+#performing cv
+reggaeton.lasso.cv <- cv.glmnet(X.reggaeton.train, undersample.balanced.data.reggaeton$reggaeton, 
+                                alpha = 1, family = "binomial", type.measure = "class")
+
+plot(reggaeton.lasso.cv)
+best.lambda.lasso.reggaeton <- reggaeton.lasso.cv$lambda.min
+
+#prediction 
+lasso.prediction.reggaeton <- predict(reggaeton.lasso.cv, X.reggaeton.test,
+                                      s = best.lambda.lasso.reggaeton,
+                                      type = "class")
+
+#Rock
+
+#performing cv
+rock.lasso.cv <- cv.glmnet(X.rock.train, undersample.balanced.data.rock$rock, 
+                           alpha = 1, family = "binomial", type.measure = "class")
+
+plot(rock.lasso.cv)
+best.lambda.lasso.rock <- rock.lasso.cv$lambda.min
+
+#prediction 
+lasso.prediction.rock <- predict(rock.lasso.cv, X.rock.test,
+                                 s = best.lambda.lasso.rock,
+                                 type = "class")
+
+```
+
+```{r, include=FALSE}
+compareLasso <- function(){ 
+  
+  classical.prob <- predict(classical.lasso.cv, X.classical.test,
+                              s = best.lambda.lasso.classical,
+                              type = "response")
+  techno.prob <- predict(techno.lasso.cv, X.techno.test,
+                           s = best.lambda.lasso.techno,
+                           type = "response")
+  rnr.prob <- predict(rock.lasso.cv, X.rock.test,
+                        s = best.lambda.lasso.rock,
+                        type = "response")
+  reggaeton.prob <- predict(reggaeton.lasso.cv, X.reggaeton.test,
+                              s = best.lambda.lasso.reggaeton,
+                              type = "response")
+  hiphop.prob <-predict(hiphop.lasso.cv, X.hiphop.test,
+                          s = best.lambda.lasso.hiphop,
+                          type = "response")
+    
+  # Create a matrix with the five vectors as 
+  #levels(spotify_dummies$track_genre)
+  #classical =  1
+  #hiphop =     2  
+  #reggaeton =  3
+  #rocknroll =  4
+  #techno =     5
+  prob.matrix <- cbind(classical.prob, hiphop.prob, reggaeton.prob, rnr.prob, techno.prob)
+  genres <- levels(test$track_genre)
+  
+  track_genre.pred <- rep(0, length(test))
+  
+  # Loop over the indices of the vectors
+  for (i in 1:length(classical.prob)) {
+    # Find the maximum value at this index across all vectors
+    max_value <- max(prob.matrix[i, ])
+    
+    for (j in 1:ncol(prob.matrix)) {
+      if (prob.matrix[i, j] == max_value) {
+        track_genre.pred[i] <- genres[j]
+      } 
+    }
+  }
+  
+  return(track_genre.pred)
+}
+```
+
+Here we show the confusion matrix for the predictions made by comparing the logistic models built with LASSO regularization. The predictions were obtained as before by choosing the prediction from the classifier with the higher confidence.
+
+```{r, echo=FALSE}
+
+#Comparing the predictions
+
+track_genre.pred.lasso <- compareLasso()
+
+cm.lasso <- table(track_genre.pred.lasso, test$track_genre)
+
+cm.lasso
+
+```
+
+We proceed to compute the metrics for the quality of the predictions.
+
+```{r, echo=FALSE}
+#Classical
+classical.precision <- cm.lasso[1,1]/sum(cm.lasso[1,])
+classical.recall <- cm.lasso[1,1]/sum(cm.lasso[,1])
+classical.f1 <- 2*((classical.precision * classical.recall)/(classical.precision + classical.recall))
+
+#Hip-hop
+hiphop.precision <- cm.lasso[2,2]/sum(cm.lasso[2,])
+hiphop.recall <- cm.lasso[2,2]/sum(cm.lasso[,2])
+hiphop.f1 <- 2*((hiphop.precision * hiphop.recall)/(hiphop.precision + hiphop.recall))
+
+#Reggaeton
+reggaeton.precision <- cm.lasso[3,3]/sum(cm.lasso[3,])
+reggaeton.recall <- cm.lasso[3,3]/sum(cm.lasso[,3])
+reggaeton.f1 <- 2*((reggaeton.precision * reggaeton.recall)/(reggaeton.precision + reggaeton.recall))
+
+#Rock and roll
+rnr.precision <- cm.lasso[4,4]/sum(cm.lasso[4,])
+rnr.recall <- cm.lasso[4,4]/sum(cm.lasso[,4])
+rnr.f1 <- 2*((rnr.precision * rnr.recall)/(rnr.precision + rnr.recall))
+
+#Techno
+techno.precision <- cm.lasso[5,5]/sum(cm.lasso[5,])
+techno.recall <- cm.lasso[5,5]/sum(cm.lasso[,5])
+techno.f1 <- 2*((techno.precision * techno.recall)/(techno.precision + techno.recall))
+
+lasso.metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(classical.precision, hiphop.precision, reggaeton.precision, rnr.precision, techno.precision), 2),
+  recall <- round(c(classical.recall, hiphop.recall, reggaeton.recall, rnr.recall, techno.recall), 2),
+  f1 <- round(c(classical.f1, hiphop.f1, reggaeton.f1, rnr.f1, techno.f1), 2)
+)
+colnames(lasso.metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+
+#Here are the performance
+
+cm.lasso.accuracy <- sum(diag(cm.lasso))/sum(cm.lasso)
+print(paste('Overall Accuracy =', cm.lasso.accuracy))
+
+lasso.metrics
+```
+
+## Discriminant Analysis: LDA and QDA
+
+Linear Discriminant Analysis (LDA) and Quadratic Discriminant Analysis (QDA) are statistical techniques used for classification. They both try to approximate the Bayes classifier by using an estimation of the density distribution of each feature in each class to compute the probability of a sample to belong to a certain class. LDA and QDA are two different, yet similar, ways of computing the conditional probabilities of a sample to belong to a certain class. In the end both method consist in computing *discriminant functions* that are used to assign an example to one of the classes.
+
+The assumptions made by the Linear Discriminant Analysis are:
+
+• **Multinormality of the predictors**: LDA assumes that the predictors are distributed as a *Multivariate Gaussian* given the class. The mean is specific is to the class.
+
+• **Common Variance**: the variance is common between all classes.
+
+• **Linearly separated classes**: the discriminant functions computed by LDA is linear and thus the accuracy of the results is better the more the data are linearly separable.
+
+Like LDA, Quadratic Discriminant Analysis assume that the predictors are drawn from a multivariate gaussian but it also assumes that each class has his own covariance matrix. Moreover the discriminant functions used by the QDA are quadratic and this allows the method to be more accurate at the expense of an higher variance.
+
+### Shapiro - Wilks test for normality
+
+Both LDA and QDA assume that the features are normally distributed in each target class. In order to check whether this assumption is satisfied by our training data we perform the *Shapiro - Wilks test*.
+
+```{r}
+#We define the subset of features we want to test
+subset.features <- c("popularity", "duration_ms", 
+                     "danceability", 
+                     "energy", "loudness", "speechiness", 
+                     "acousticness", "instrumentalness", 
+                     "liveness","valence", "tempo") 
+#Classical
+classical.data <- train[train$track_genre == "classical", 
+                        subset.features]
+shapiro.results <- lapply(classical.data, shapiro.test)
+p.values <- sapply(shapiro.results, function(x) x$p.value)
+print(p.values)
+
+#Techno
+techno.data <- train[train$track_genre == "techno",
+                     subset.features]
+shapiro.results <- lapply(techno.data, shapiro.test)
+p.values <- sapply(shapiro.results, function(x) x$p.value)
+print(p.values)
+
+#Hiphop
+hiphop.data <- train[train$track_genre == "hip-hop", 
+                     subset.features]
+shapiro.results <- lapply(hiphop.data, shapiro.test)
+p.values <- sapply(shapiro.results, function(x) x$p.value)
+print(p.values)
+
+#Rock
+rock.data <- train[train$track_genre == "rock-n-roll", 
+                   subset.features]
+shapiro.results <- lapply(rock.data, shapiro.test)
+p.values <- sapply(shapiro.results, function(x) x$p.value)
+print(p.values)
+
+#Reggaeton
+reggaeton.data <- train[train$track_genre == "reggaeton", 
+                        subset.features]
+shapiro.results <- lapply(reggaeton.data, shapiro.test)
+p.values <- sapply(shapiro.results, function(x) x$p.value)
+print(p.values)
+```
+
+The Shapiro-Wilks test measures the discrepancy between the observed data and the expected values under the assumption of normality. If the p-value associated with the test statistic is greater than a predetermined significance level (often 0.05), we fail to reject the null hypothesis and conclude that the data appears to be normally distributed. On the other hand, if the p-value is less than the significance level, we should reject the null hypothesis and conclude that the data does not follow a normal distribution.
+
+In our case we definitely don't have data that behave like normal distributions but we try to perform the LDA no matter the results. We already know they will not probably be good.
+
+### LDA
+
+We now fit a LDA model.
+
+```{r}
+lda.fit <- lda(track_genre ~ popularity + duration_ms + 
+                 danceability + energy + loudness + 
+                 speechiness + acousticness + 
+                 instrumentalness + liveness + valence + 
+                 tempo, data = train)
+lda.fit 
+```
+
+Here is the confusion matrix for the predictions.
+
+```{r}
+lda.predictions <- predict(lda.fit, test)
+#ldahist(data = lda.predictions$x[,1], g = train$track_genre)
+cm.lda <- table(lda.predictions$class, test$track_genre)
+cm.lda
+```
+
+We now proceed to compute the metrics of the performance of the LDA classifier.
+
+```{r, echo=FALSE}
+cm.lda.accuracy <- sum(diag(cm.lda))/sum(cm.lda)
+
+#Classical
+lda.classical.precision <- cm.lda[1,1]/sum(cm.lda[1,])
+lda.classical.recall <- cm.lda[1,1]/sum(cm.lda[,1])
+lda.classical.f1 <- 2*((lda.classical.precision * lda.classical.recall)/(lda.classical.precision + lda.classical.recall))
+
+#Hip-hop
+lda.hiphop.precision <- cm.lda[2,2]/sum(cm.lda[2,])
+lda.hiphop.recall <- cm.lda[2,2]/sum(cm.lda[,2])
+lda.hiphop.f1 <- 2*((lda.hiphop.precision * lda.hiphop.recall)/(lda.hiphop.precision + lda.hiphop.recall))
+
+#Reggaeton
+lda.reggaeton.precision <- cm.lda[3,3]/sum(cm.lda[3,])
+lda.reggaeton.recall <- cm.lda[3,3]/sum(cm.lda[,3])
+lda.reggaeton.f1 <- 2*((lda.reggaeton.precision * lda.reggaeton.recall)/(lda.reggaeton.precision + lda.reggaeton.recall))
+
+#Rock and roll
+lda.rnr.precision <- cm.lda[4,4]/sum(cm.lda[4,])
+lda.rnr.recall <- cm.lda[4,4]/sum(cm.lda[,4])
+lda.rnr.f1 <- 2*((lda.rnr.precision * lda.rnr.recall)/(lda.rnr.precision + lda.rnr.recall))
+
+#Techno
+lda.techno.precision <- cm.lda[5,5]/sum(cm.lda[5,])
+lda.techno.recall <- cm.lda[5,5]/sum(cm.lda[,5])
+lda.techno.f1 <- 2*((lda.techno.precision * lda.techno.recall)/(lda.techno.precision + lda.techno.recall))
+
+lda.metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(lda.classical.precision, lda.hiphop.precision, lda.reggaeton.precision, lda.rnr.precision, lda.techno.precision), 2),
+  recall <- round(c(lda.classical.recall, lda.hiphop.recall, lda.reggaeton.recall, lda.rnr.recall, lda.techno.recall), 2),
+  f1 <- round(c(lda.classical.f1, lda.hiphop.f1, lda.reggaeton.f1, lda.rnr.f1, lda.techno.f1), 2)
+)
+colnames(lda.metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+```
+
+```{r, echo=FALSE}
+#Here are the performance
+cm.lda.accuracy <- sum(diag(cm.lda))/sum(cm.lda)
+print(paste("The accuracy of the LDA is: ", cm.lda.accuracy))
+lda.metrics
+```
+
+We will make our observations and talk about the results in the later comparison between models.
+
+### QDA
+
+Let's use the *qda()* function from the `MASS` package.
+
+```{r}
+qda.fit <- qda(track_genre ~ popularity + duration_ms + 
+                 danceability + energy + loudness + 
+                 speechiness + acousticness + 
+                 instrumentalness + liveness + 
+                 valence + tempo, data = train)
+qda.fit
+```
+
+Here we show the confusion matrix.
+
+```{r}
+qda.predictions <- predict(qda.fit, test)
+cm.qda <- table(qda.predictions$class, test$track_genre)
+cm.qda
+```
+
+And here are the metrics, as before, we will talk later about them.
+
+```{r, echo = FALSE}
+
+cm.qda.accuracy <- sum(diag(cm.qda))/sum(cm.qda)
+
+#Classical
+qda.classical.precision <- cm.qda[1,1]/sum(cm.qda[1,])
+qda.classical.recall <- cm.qda[1,1]/sum(cm.qda[,1])
+qda.classical.f1 <- 2*((qda.classical.precision * qda.classical.recall)/(qda.classical.precision + qda.classical.recall))
+
+#Hip-hop
+qda.hiphop.precision <- cm.qda[2,2]/sum(cm.qda[2,])
+qda.hiphop.recall <- cm.qda[2,2]/sum(cm.qda[,2])
+qda.hiphop.f1 <- 2*((qda.hiphop.precision * qda.hiphop.recall)/(qda.hiphop.precision + qda.hiphop.recall))
+
+#Reggaeton
+qda.reggaeton.precision <- cm.qda[3,3]/sum(cm.qda[3,])
+qda.reggaeton.recall <- cm.qda[3,3]/sum(cm.qda[,3])
+qda.reggaeton.f1 <- 2*((qda.reggaeton.precision * qda.reggaeton.recall)/(qda.reggaeton.precision + qda.reggaeton.recall))
+
+#Rock and roll
+qda.rnr.precision <- cm.qda[4,4]/sum(cm.qda[4,])
+qda.rnr.recall <- cm.qda[4,4]/sum(cm.qda[,4])
+qda.rnr.f1 <- 2*((qda.rnr.precision * qda.rnr.recall)/(qda.rnr.precision + qda.rnr.recall))
+
+#Techno
+qda.techno.precision <- cm.qda[5,5]/sum(cm.qda[5,])
+qda.techno.recall <- cm.qda[5,5]/sum(cm.qda[,5])
+qda.techno.f1 <- 2*((qda.techno.precision * qda.techno.recall)/(qda.techno.precision + qda.techno.recall))
+
+qda.metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(qda.classical.precision, qda.hiphop.precision, qda.reggaeton.precision, qda.rnr.precision, qda.techno.precision), 2),
+  recall <- round(c(qda.classical.recall, qda.hiphop.recall, qda.reggaeton.recall, qda.rnr.recall, qda.techno.recall), 2),
+  f1 <- round(c(qda.classical.f1, qda.hiphop.f1, qda.reggaeton.f1, qda.rnr.f1, qda.techno.f1), 2)
+)
+colnames(qda.metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+```
+
+```{r}
+#Here are the performance
+print(paste("The accuracy of the QDA is: ", round(cm.qda.accuracy, 2)))
+qda.metrics
+```
+
+##### Marginal considerations
+
+As we could see from the Shapiro-Wilkis test the normality assumption of the methods was not satisfied. This suggests that no matter how the result may be good compared to the other methods we tried, other techniques should be preferred in the scenario we are considering.
+
+## Naive Bayes
+
+The Naive Bayes classifier is another techniques that approximates a Bayes classifier. As we discussed earlier LDA and QDA assume that the predictors are distributed normally within a class. The Naive Bayes relaxes this assumption by making no hypothesis on the family on the distribution. At the same time, being the computation of a joint probability intractable in most cases, it assumes that the simplifying assumption of independence of the the predictors within a class. Even if this simplification is not realistic in most cases, the Naive Bayes is known to work well in practice.
+
+Let's now see how it performs on our data.
+
+```{r}
+#Naive bayes classifier
+nb.fit <- naiveBayes(track_genre ~ ., data = train[,1:16])
+nb.class <- predict(nb.fit, test[,1:16])
+cm.nb <- table(nb.class, test$track_genre)
+
+```
+
+Let's take a look at the confusion matrix for our predictions.
+
+```{r, echo=FALSE}
+cm.nb
+```
+
+And to the performance.
+
+```{r, echo=FALSE}
+
+#Classical
+classical.precision <- cm.nb[1,1]/sum(cm.nb[1,])
+classical.recall <- cm.nb[1,1]/sum(cm.nb[,1])
+classical.f1 <- 2*((classical.precision * classical.recall)/(classical.precision + classical.recall))
+
+#Hip-hop
+hiphop.precision <- cm.nb[2,2]/sum(cm.nb[2,])
+hiphop.recall <- cm.nb[2,2]/sum(cm.nb[,2])
+hiphop.f1 <- 2*((hiphop.precision * hiphop.recall)/(hiphop.precision + hiphop.recall))
+
+#Reggaeton
+reggaeton.precision <- cm.nb[3,3]/sum(cm.nb[3,])
+reggaeton.recall <- cm.nb[3,3]/sum(cm.nb[,3])
+reggaeton.f1 <- 2*((reggaeton.precision * reggaeton.recall)/(reggaeton.precision + reggaeton.recall))
+
+#Rock and roll
+rnr.precision <- cm.nb[4,4]/sum(cm.nb[4,])
+rnr.recall <- cm.nb[4,4]/sum(cm.nb[,4])
+rnr.f1 <- 2*((rnr.precision * rnr.recall)/(rnr.precision + rnr.recall))
+
+#Techno
+techno.precision <- cm.nb[5,5]/sum(cm.nb[5,])
+techno.recall <- cm.nb[5,5]/sum(cm.nb[,5])
+techno.f1 <- 2*((techno.precision * techno.recall)/(techno.precision + techno.recall))
+
+nb.metrics <- data.frame(
+  class <- c(levels(test$track_genre)),
+  precision <- round(c(classical.precision, hiphop.precision, reggaeton.precision, rnr.precision, techno.precision), 2),
+  recall <- round(c(classical.recall, hiphop.recall, reggaeton.recall, rnr.recall, techno.recall), 2),
+  f1 <- round(c(classical.f1, hiphop.f1, reggaeton.f1, rnr.f1, techno.f1), 2)
+)
+colnames(nb.metrics) <- c("Genre", "Precision", "Recall(TPR)", "F1-score")
+
+cm.nb.accuracy <- sum(diag(cm.nb))/sum(cm.nb)
+print(paste("The accuracy of the Naive Bayes is: ", 
+            round(cm.nb.accuracy, 2)))
+
+nb.metrics
+```
+
+# Models Comparison
+
+We want to make a comparison between the models we built so we summarize in the following tables the results obtained for our genre prediction task.
+
+First we take a look at the accuracy achieved by each model.
+
+| **Model**                                              | **Accuracy** |
+|:-------------------------------------------------------|:------------:|
+| *Logistic Regression models with variable selection*   |     0.76     |
+| *Logistic Regression models with ridge regularization* |     0.74     |
+| *Logistic Regression models with lasso regularization* |     0.75     |
+| *LDA*                                                  |     0.74     |
+| *QDA*                                                  |     0.77     |
+| *Naive Bayes*                                          |     0.74     |
+
+And then to the performance with respect to each class:
+
+• *Classical*
+
+| **Model**                                              | **Precision** | **Recall(TPR)** | **F1-score** |
+|:--------------------------------|:-----------:|:-----------:|:-----------:|
+| *Logistic Regression with variable selection*          |     0.97      |      0.82       |     0.89     |
+| *Logistic Regression models with ridge regularization* |     0.99      |      0.77       |     0.87     |
+| *Logistic Regression models with lasso regularization* |     0.99      |      0.83       |     0.90     |
+| *LDA*                                                  |     0.98      |      0.85       |     0.91     |
+| *QDA*                                                  |     0.96      |      0.90       |     0.93     |
+| *Naive Bayes*                                          |     0.95      |      0.88       |     0.91     |
+
+• *Hip-hop*
+
+| **Model**                                              | **Precision** | **Recall(TPR)** | **F1-score** |
+|:--------------------------------|:-----------:|:-----------:|:-----------:|
+| *Logistic Regression with variable selection*          |     0.55      |      0.62       |     0.58     |
+| *Logistic Regression models with ridge regularization* |     0.55      |      0.62       |     0.58     |
+| *Logistic Regression models with lasso regularization* |     0.55      |      0.53       |     0.54     |
+| *LDA*                                                  |     0.50      |      0.54       |     0.52     |
+| *QDA*                                                  |     0.65      |      0.36       |     0.46     |
+| *Naive Bayes*                                          |     0.57      |      0.34       |     0.43     |
+
+• *Reggaeton*
+
+| **Model**                                              | **Precision** | **Recall(TPR)** | **F1-score** |
+|:--------------------------------|:-----------:|:-----------:|:-----------:|
+| *Logistic Regression with variable selection*          |     0.64      |      0.62       |     0.63     |
+| *Logistic Regression models with ridge regularization* |     0.62      |      0.61       |     0.62     |
+| *Logistic Regression models with lasso regularization* |     0.58      |      0.70       |     0.63     |
+| *LDA*                                                  |     0.57      |      0.65       |     0.61     |
+| *QDA*                                                  |     0.54      |      0.89       |     0.67     |
+| *Naive Bayes*                                          |     0.51      |      0.84       |     0.64     |
+
+• *Rock and Roll*
+
+| **Model**                                              | **Precision** | **Recall(TPR)** | **F1-score** |
+|:--------------------------------|:-----------:|:-----------:|:-----------:|
+| *Logistic Regression with variable selection*          |     0.78      |      0.93       |     0.85     |
+| *Logistic Regression models with ridge regularization* |     0.74      |      0.93       |     0.82     |
+| *Logistic Regression models with lasso regularization* |     0.80      |      0.93       |     0.86     |
+| *LDA*                                                  |     0.78      |      0.89       |     0.83     |
+| *QDA*                                                  |     0.88      |      0.89       |     0.89     |
+| *Naive Bayes*                                          |     0.84      |      0.89       |     0.86     |
+
+• *Techno*
+
+| **Model**                                              | **Precision** | **Recall(TPR)** | **F1-score** |
+|:--------------------------------|:-----------:|:-----------:|:-----------:|
+| *Logistic Regression with variable selection*          |     0.90      |      0.79       |     0.84     |
+| *Logistic Regression models with ridge regularization* |     0.89      |      0.77       |     0.82     |
+| *Logistic Regression models with lasso regularization* |     0.91      |      0.77       |     0.83     |
+| *LDA*                                                  |     0.96      |      0.74       |     0.83     |
+| *QDA*                                                  |     0.95      |      0.78       |     0.86     |
+| *Naive Bayes*                                          |     0.93      |      0.72       |     0.81     |
+
+
+```{r, echo=FALSE}
+# Logistic regression with variable selection
+roc.lrvs.reggaeton <- roc(test$reggaeton, logistic_prop_reggaeton_under, levels=c(0, 1))
+plot(roc.out.reggaeton, legacy.axes=TRUE, 
+     main= 'ROC curves for Reggaeton models',
+     xlab="False positive rate", ylab="True positive rate")
+
+# Logistic regression with ridge regularization
+ridge.prob.reggaeton <- predict(reggaeton.ridge.cv, 
+                                      X.reggaeton.test,
+                                      s = best.lambda.ridge.reggaeton,
+                                      type = 'response')
+
+roc.ridge.reggaeton <- roc(test$reggaeton, ridge.prob.reggaeton, levels=c(0, 1))
+
+lines(roc.ridge.reggaeton, col = "purple", lty = 1)
+
+# Logistic regression with lasso regularization
+lasso.prob.reggaeton <- predict(reggaeton.lasso.cv, 
+                                      X.reggaeton.test,
+                                      s = best.lambda.lasso.reggaeton,
+                                      type = "response")
+
+roc.lasso.reggaeton <- roc(test$reggaeton, lasso.prob.reggaeton, levels=c(0, 1))
+
+lines(roc.lasso.reggaeton, col = "blue", lty = 1)
+
+# LDA
+lda.prob.reggaeton <- predict(lda.fit, test, type='response')
+lda.prob.reggaeton <- lda.prob.reggaeton$posterior[,3]
+
+roc.lda.reggaeton <- roc(test$reggaeton, lda.prob.reggaeton, levels=c(0, 1))
+
+lines(roc.lda.reggaeton, col = "yellow", lty = 1)
+
+# QDA
+qda.prob.reggaeton <- predict(qda.fit, test, type='response')
+qda.prob.reggaeton <- qda.prob.reggaeton$posterior[,3]
+
+roc.qda.reggaeton <- roc(test$reggaeton, qda.prob.reggaeton, levels=c(0, 1))
+
+lines(roc.qda.reggaeton, col = "orange", lty = 1)
+
+# Naive Bayes
+nb.prob.reggaeton <- predict(nb.fit, test[,1:16], type='raw')
+nb.prob.reggaeton <- nb.prob.reggaeton[,3]
+
+roc.nb.reggaeton <- roc(test$reggaeton, nb.prob.reggaeton, levels=c(0, 1))
+
+lines(roc.nb.reggaeton, col = "red", lty = 1)
+
+legend("bottomright", 
+       legend = c("Logistic Regression with Variable Selection", 
+                                 "Ridge logistic regression",
+                                 "Lasso logistic regression",
+                                 "LDA",
+                                 "QDA",
+                                 "Naive Bayes"), 
+       col = c("black", "purple", "blue", "yellow", "orange", "red"),
+       lty = 1, 
+       cex = 0.5)
+
+```
+```{r, echo=FALSE}
+print('Auc for Reggaeton classification models')
+```
+
+--------------------------------------------------
+
+```{r, echo=FALSE}
+print(paste('Logistic regression with model selection: AUC =', round(auc(roc.lrvs.reggaeton),3)))
+print(paste('Ridge logistic regression:                AUC =', round(auc(roc.ridge.reggaeton),3)))
+print(paste('Lasso logistic regression:                AUC =', round(auc(roc.lasso.reggaeton),3)))
+print(paste('LDA model:                                AUC =', round(auc(roc.lda.reggaeton),3)))
+print(paste('QDA model:                                AUC =', round(auc(roc.qda.reggaeton),3)))
+print(paste('Naive Bayes model:                        AUC =', round(auc(roc.nb.reggaeton),3)))
+```
+
+Note how the results for the *overall accuracy*, the *F1-score* and the *AUC* of the models brings to different leader board:
+
+• The *accuracy* table shows us a general result of how each model perform in the classification of each genre contemporaneously. None of the model reach outstanding results, they all wander around 75% of accuracy, with QDA that reaches the top of 77%. 
+
+• When we see at the table with *precision, recall, and F1-score* we must take one genre at a time. In this case, different `track_genre` leads to different best models. As general observations we see that the ridge model is the one that perform worse, with an exception in `hip-hop` genre. QDA still seems the one with better perfomances, again besides `hip-hop`.
+
+• We then wanted to see how the models behave by comparing the *Roc Curves* and AUC. As an example we focused on one single genre, `reggaeton`. We plotted the ROC curves of all models and we can see that all curves are similar. In particular the predictor build with QDA is the one that performed better, as also noticed earlier, with the AUC of 0.925. The worse AUC instead is given by the *Logistic regression with Ridge regularization*, with an AUC of 0.891.
+
+# Conclusions
+
+In this report we explored the task of `track_genre` classification, with the final objective of building a model that could accurately predict the genre of a give track based on its audio features. 
+
+Through our analysis, we studied features correlations and we experimented with various machine learning algorithms. 
+We found out that `track_genre` is partially correlated with some audio features of the music track. It might be that a feature is correlated with each of the genres or that it is highly correlated with only one or two genres. This is the case for example of `instrumentalness` and his strict correlation with `classical` and `techno` and plays a significant role in the classification.
+
+The model that gained the best accuracy score in this task is the QDA model with a 77%, even if the scores are all pretty close to each others. When we see instead the single genre classification QDA is still the best model for most of the genres except for `hip-hop` where the logistic regressions with variable selection and ridge regularization got the best scores.
+
+Our results are not particularly relevant seen the poor accuracy our best model could reach.
+In general however, it is important to note that `track_genre` classification is a complex task due to the inherent subjectivity and ambiguity in defining music genres. Some genres may have some particular features or relevant characteristic that better separate them from others, but in general this is not the case for all genres. Moreover, the dataset itself might have certain limitations or biases, impacting the performance and generalizability of our models.
+To further improve the accuracy of genre classification, future research could consider incorporating additional data sources, such as lyrics. 
+
+
+
