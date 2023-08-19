@@ -17,5 +17,5 @@ the R-markdown report;
 the pdf of the final report.
 I highly suggest to look to the final report or to the R-markdown to see the work. In the R workspace there are more researches and experiments but it is hard-to-read.
 
-The following project was done together with @[GibboSan](https://github.com/GibboSan)
+The following project was done together with [GibboSan](https://github.com/GibboSan)
 
