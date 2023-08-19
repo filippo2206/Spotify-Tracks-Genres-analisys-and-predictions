@@ -8,3 +8,13 @@ We will first provide an overview of our dataset, with the description and pre-p
 we will proceed with exploratory data analysis and the building of the models to predict the genre class
 with different approaches. Finally we will evaluate the performance of our models and make a comparison
 between them. We will use evaluation metrics such as accuracy, precision, recall and F1 score.
+
+
+The files reported here include:
+
+the R workspace: where we wrote our codes, do the first analysis and experiments;
+the R-markdown report;
+the pdf of the final report.
+I highly suggest to look to the final report or to the R-markdown to see the work. In the R workspace there are more researches and experiments but it is hard-to-read.
+
+The following project was done together with @GibboSan
